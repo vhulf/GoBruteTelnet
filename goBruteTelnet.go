@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -157,9 +158,13 @@ func attemptLogin(username, password string, theIp string, thePort string) bool 
 	sentUser := false
 	sentPass := false
 
+	fullSequence := ""
+
 	scanner := bufio.NewScanner(conn)
 	scanner.Split(bufio.ScanRunes)
+	// do full login sequence, then read until we see 'incorrect' and if we don't see incorrect before seeing the next colon
 	for scanner.Scan() {
+		fullSequence += scanner.Text()
 		if scanner.Text() == ":" {
 			gotToColon = true
 			if sentUser && sentPass {
@@ -179,6 +184,9 @@ func attemptLogin(username, password string, theIp string, thePort string) bool 
 				gotToColon = false
 			}
 		}
+	}
+	if !strings.Contains(fullSequence, " incorrect") {
+		return true
 	}
 	fmt.Print("!! ")
 	verbPrint("Something has gone wrong with our telnet interaction... it closed before I sent username and password!")
