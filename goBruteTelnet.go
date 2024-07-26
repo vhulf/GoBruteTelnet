@@ -185,7 +185,23 @@ func attemptLogin(username, password string, theIp string, thePort string) bool 
 				conn.Write([]byte("\r\n"))
 				sentPass = true
 				gotToColon = false
+			} else if sentUser && sentPass {
+				conn.Close()
+				if !strings.Contains(fullSequence, " incorrect") {
+					return true
+				}
+				return false
 			}
+		} else if scanner.Text() == "[" {
+			if !strings.Contains(fullSequence, " incorrect") {
+				return true
+			}
+			return false
+		} else if scanner.Text() == "#" {
+			if !strings.Contains(fullSequence, " incorrect") {
+				return true
+			}
+			return false
 		}
 	}
 	if !strings.Contains(fullSequence, " incorrect") {
