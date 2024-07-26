@@ -169,6 +169,9 @@ func attemptLogin(username, password string, theIp string, thePort string) bool 
 			gotToColon = true
 			if sentUser && sentPass {
 				conn.Close()
+				if !strings.Contains(fullSequence, " incorrect") {
+					return true
+				}
 				return false
 			}
 		} else if scanner.Text() == " " && gotToColon {
